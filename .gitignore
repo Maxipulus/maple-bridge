@@ -1,0 +1,7 @@
+/state/
+/working/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
