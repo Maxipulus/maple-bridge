@@ -1,0 +1,379 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "MapleBridge Lightsail gateway, SSM hybrid node, and optional automatic security maintenance. The gateway is opt-in for two-phase deployment.",
+  "Parameters": {
+    "DeployGateway": {
+      "Type": "String",
+      "Default": "false",
+      "AllowedValues": ["false", "true"],
+      "Description": "Create the cost-incurring Lightsail instance and static IP only when explicitly set to true."
+    },
+    "GatewayName": {
+      "Type": "String",
+      "Default": "maplebridge-gateway",
+      "AllowedPattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]*[a-zA-Z0-9]$"
+    },
+    "AvailabilityZone": {
+      "Type": "String",
+      "Default": "us-west-2a",
+      "AllowedPattern": "^us-west-2[a-z]$"
+    },
+    "BlueprintId": {
+      "Type": "String",
+      "Default": "ubuntu_24_04",
+      "AllowedPattern": "^[a-zA-Z0-9_.-]+$",
+      "Description": "Verify this ID with Lightsail immediately before deployment."
+    },
+    "BundleId": {
+      "Type": "String",
+      "Default": "nano_3_0",
+      "AllowedPattern": "^[a-zA-Z0-9_.-]+$",
+      "Description": "Verify availability and current price immediately before deployment."
+    },
+    "VpnPort": {
+      "Type": "Number",
+      "Default": 51820,
+      "MinValue": 1,
+      "MaxValue": 65535
+    },
+    "SsmBootstrapMode": {
+      "Type": "String",
+      "Default": "Redacted",
+      "AllowedValues": ["Register", "Redacted"],
+      "Description": "Use Register only for first boot, then update to Redacted after the managed node is online."
+    },
+    "SsmActivationId": {
+      "Type": "String",
+      "Default": "REDACTED",
+      "NoEcho": true,
+      "AllowedPattern": "^(REDACTED|[A-Za-z0-9-]{16,128})$"
+    },
+    "SsmActivationCode": {
+      "Type": "String",
+      "Default": "REDACTED",
+      "NoEcho": true,
+      "AllowedPattern": "^(REDACTED|[A-Za-z0-9+/=_-]{16,256})$"
+    },
+    "EnableAutomaticMaintenance": {
+      "Type": "String",
+      "Default": "false",
+      "AllowedValues": ["false", "true"],
+      "Description": "Create the Systems Manager maintenance window, target, and patch task."
+    },
+    "MaintenanceManagedNodeId": {
+      "Type": "String",
+      "Default": "UNCONFIGURED",
+      "AllowedPattern": "^(UNCONFIGURED|mi-[0-9a-f]{17})$",
+      "Description": "Exact SSM hybrid managed-node ID targeted by automatic maintenance."
+    },
+    "MaintenanceSchedule": {
+      "Type": "String",
+      "Default": "cron(0 18 ? * TUE#1 *)",
+      "AllowedPattern": "^cron\\(.+\\)$",
+      "Description": "Authoritative UTC schedule for automatic security maintenance."
+    },
+    "MaintenanceDurationHours": {
+      "Type": "Number",
+      "Default": 2,
+      "MinValue": 1,
+      "MaxValue": 24
+    },
+    "MaintenanceCutoffHours": {
+      "Type": "Number",
+      "Default": 1,
+      "MinValue": 0,
+      "MaxValue": 23
+    },
+    "MaintenanceTaskTimeoutSeconds": {
+      "Type": "Number",
+      "Default": 7200,
+      "MinValue": 600,
+      "MaxValue": 172800
+    }
+  },
+  "Rules": {
+    "ActivationValuesMatchBootstrapMode": {
+      "Assertions": [
+        {
+          "Assert": {
+            "Fn::Or": [
+              {
+                "Fn::And": [
+                  { "Fn::Equals": [{ "Ref": "SsmBootstrapMode" }, "Register"] },
+                  { "Fn::Not": [{ "Fn::Equals": [{ "Ref": "SsmActivationId" }, "REDACTED"] }] },
+                  { "Fn::Not": [{ "Fn::Equals": [{ "Ref": "SsmActivationCode" }, "REDACTED"] }] }
+                ]
+              },
+              {
+                "Fn::And": [
+                  { "Fn::Equals": [{ "Ref": "SsmBootstrapMode" }, "Redacted"] },
+                  { "Fn::Equals": [{ "Ref": "SsmActivationId" }, "REDACTED"] },
+                  { "Fn::Equals": [{ "Ref": "SsmActivationCode" }, "REDACTED"] }
+                ]
+              }
+            ]
+          },
+          "AssertDescription": "Register mode requires real activation values; Redacted mode requires both values to be REDACTED."
+        }
+      ]
+    },
+    "MaintenanceValuesMatchMode": {
+      "Assertions": [
+        {
+          "Assert": {
+            "Fn::Or": [
+              { "Fn::Equals": [{ "Ref": "EnableAutomaticMaintenance" }, "false"] },
+              {
+                "Fn::And": [
+                  { "Fn::Equals": [{ "Ref": "EnableAutomaticMaintenance" }, "true"] },
+                  { "Fn::Not": [{ "Fn::Equals": [{ "Ref": "MaintenanceManagedNodeId" }, "UNCONFIGURED"] }] },
+                  { "Fn::Not": [{ "Fn::Equals": [{ "Ref": "DeployGateway" }, "false"] }] }
+                ]
+              }
+            ]
+          },
+          "AssertDescription": "Automatic maintenance requires a deployed gateway and an exact hybrid managed-node ID."
+        }
+      ]
+    }
+  },
+  "Conditions": {
+    "CreateGateway": {
+      "Fn::Equals": [
+        { "Ref": "DeployGateway" },
+        "true"
+      ]
+    },
+    "RegisterSsm": {
+      "Fn::Equals": [
+        { "Ref": "SsmBootstrapMode" },
+        "Register"
+      ]
+    },
+    "CreateAutomaticMaintenance": {
+      "Fn::Equals": [
+        { "Ref": "EnableAutomaticMaintenance" },
+        "true"
+      ]
+    }
+  },
+  "Resources": {
+    "SsmHybridNodeRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "Path": "/maplebridge/",
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ssm.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "ManagedPolicyArns": [
+          "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+        ],
+        "Tags": [
+          { "Key": "Project", "Value": "MapleBridge" }
+        ]
+      }
+    },
+    "MaintenanceWindowRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "Path": "/maplebridge/",
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": { "Service": "ssm.amazonaws.com" },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "MapleBridgeMaintenanceWindow",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": "ssm:SendCommand",
+                  "Resource": [
+                    { "Fn::Sub": "arn:${AWS::Partition}:ssm:${AWS::Region}::document/AWS-RunPatchBaseline" },
+                    { "Fn::Sub": "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:managed-instance/*" }
+                  ]
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "ssm:CancelCommand",
+                    "ssm:GetCommandInvocation",
+                    "ssm:ListCommandInvocations",
+                    "ssm:ListCommands"
+                  ],
+                  "Resource": "*"
+                }
+              ]
+            }
+          }
+        ],
+        "Tags": [
+          { "Key": "Project", "Value": "MapleBridge" }
+        ]
+      }
+    },
+    "SecurityMaintenanceWindow": {
+      "Type": "AWS::SSM::MaintenanceWindow",
+      "Condition": "CreateAutomaticMaintenance",
+      "Properties": {
+        "AllowUnassociatedTargets": false,
+        "Cutoff": { "Ref": "MaintenanceCutoffHours" },
+        "Description": "Install approved Ubuntu security updates for MapleBridge",
+        "Duration": { "Ref": "MaintenanceDurationHours" },
+        "Name": "maplebridge-security-updates",
+        "Schedule": { "Ref": "MaintenanceSchedule" },
+        "ScheduleTimezone": "UTC",
+        "Tags": [
+          { "Key": "Project", "Value": "MapleBridge" },
+          { "Key": "ManagedBy", "Value": "CloudFormation" }
+        ]
+      }
+    },
+    "SecurityMaintenanceTarget": {
+      "Type": "AWS::SSM::MaintenanceWindowTarget",
+      "Condition": "CreateAutomaticMaintenance",
+      "Properties": {
+        "Description": "Exact MapleBridge SSM hybrid managed node",
+        "Name": "MapleBridgeGateway",
+        "OwnerInformation": "MapleBridge gateway managed node",
+        "ResourceType": "INSTANCE",
+        "Targets": [
+          {
+            "Key": "InstanceIds",
+            "Values": [{ "Ref": "MaintenanceManagedNodeId" }]
+          }
+        ],
+        "WindowId": { "Ref": "SecurityMaintenanceWindow" }
+      }
+    },
+    "SecurityMaintenanceTask": {
+      "Type": "AWS::SSM::MaintenanceWindowTask",
+      "Condition": "CreateAutomaticMaintenance",
+      "Properties": {
+        "CutoffBehavior": "CANCEL_TASK",
+        "Description": "Install approved Ubuntu security updates for MapleBridge",
+        "MaxConcurrency": "1",
+        "MaxErrors": "1",
+        "Name": "MapleBridgeSecurityPatches",
+        "Priority": 10,
+        "ServiceRoleArn": { "Fn::GetAtt": ["MaintenanceWindowRole", "Arn"] },
+        "Targets": [
+          {
+            "Key": "WindowTargetIds",
+            "Values": [{ "Ref": "SecurityMaintenanceTarget" }]
+          }
+        ],
+        "TaskArn": "AWS-RunPatchBaseline",
+        "TaskInvocationParameters": {
+          "MaintenanceWindowRunCommandParameters": {
+            "Comment": "Install approved Ubuntu security updates for MapleBridge",
+            "Parameters": {
+              "Operation": ["Install"],
+              "RebootOption": ["RebootIfNeeded"]
+            },
+            "TimeoutSeconds": { "Ref": "MaintenanceTaskTimeoutSeconds" }
+          }
+        },
+        "TaskType": "RUN_COMMAND",
+        "WindowId": { "Ref": "SecurityMaintenanceWindow" }
+      }
+    },
+    "GatewayInstance": {
+      "Type": "AWS::Lightsail::Instance",
+      "Condition": "CreateGateway",
+      "Properties": {
+        "InstanceName": { "Ref": "GatewayName" },
+        "AvailabilityZone": { "Ref": "AvailabilityZone" },
+        "BlueprintId": { "Ref": "BlueprintId" },
+        "BundleId": { "Ref": "BundleId" },
+        "Networking": {
+          "Ports": [
+            {
+              "AccessDirection": "inbound",
+              "AccessFrom": "Anywhere (0.0.0.0/0)",
+              "AccessType": "Public",
+              "Cidrs": ["0.0.0.0/0"],
+              "CommonName": "MapleBridge WireGuard",
+              "FromPort": { "Ref": "VpnPort" },
+              "Protocol": "udp",
+              "ToPort": { "Ref": "VpnPort" }
+            }
+          ]
+        },
+        "Tags": [
+          { "Key": "Project", "Value": "MapleBridge" },
+          { "Key": "ManagedBy", "Value": "CloudFormation" }
+        ],
+        "UserData": {
+          "Fn::If": [
+            "RegisterSsm",
+            {
+              "Fn::Sub": "#!/bin/sh\nset -eu\nexec >>/var/log/maplebridge-bootstrap.log 2>&1\nmkdir -p /var/lib/maplebridge /tmp/maplebridge-ssm\nactivation_code='${SsmActivationCode}'\nactivation_id='${SsmActivationId}'\nif [ -x /snap/amazon-ssm-agent/current/amazon-ssm-agent ]; then\n  echo 'Registering the preinstalled Snap SSM Agent.'\n  systemctl stop snap.amazon-ssm-agent.amazon-ssm-agent.service || true\n  /snap/amazon-ssm-agent/current/amazon-ssm-agent -register -code \"$activation_code\" -id \"$activation_id\" -region '${AWS::Region}'\n  systemctl start snap.amazon-ssm-agent.amazon-ssm-agent.service\nelif command -v amazon-ssm-agent >/dev/null 2>&1; then\n  echo 'Registering the preinstalled Deb SSM Agent.'\n  systemctl stop amazon-ssm-agent.service || true\n  amazon-ssm-agent -register -code \"$activation_code\" -id \"$activation_id\" -region '${AWS::Region}'\n  systemctl enable --now amazon-ssm-agent.service\nelse\n  echo 'No preinstalled SSM Agent found; using the regional AWS setup CLI.'\n  apt-get update\n  DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends ca-certificates curl\n  curl --fail --silent --show-error --location --retry 5 --retry-all-errors 'https://amazon-ssm-${AWS::Region}.s3.${AWS::Region}.amazonaws.com/latest/debian_amd64/ssm-setup-cli' --output /tmp/maplebridge-ssm/ssm-setup-cli\n  chmod 0700 /tmp/maplebridge-ssm/ssm-setup-cli\n  /tmp/maplebridge-ssm/ssm-setup-cli -register -activation-code \"$activation_code\" -activation-id \"$activation_id\" -region '${AWS::Region}'\n  systemctl enable --now amazon-ssm-agent.service\nfi\npython3 - \"$activation_code\" \"$activation_id\" <<'PY'\nfrom pathlib import Path\nimport sys\n\nsecrets = tuple(value.encode() for value in sys.argv[1:])\npaths = (\n    Path('/var/lib/cloud/instance/user-data.txt'),\n    Path('/var/lib/cloud/instance/scripts/part-001'),\n    Path('/var/log/cloud-init-output.log'),\n    Path('/var/log/maplebridge-bootstrap.log'),\n)\nfor path in paths:\n    if not path.is_file():\n        continue\n    content = path.read_bytes()\n    for secret in secrets:\n        content = content.replace(secret, b'REDACTED')\n    path.write_bytes(content)\nPY\nunset activation_code activation_id\nrm -rf /tmp/maplebridge-ssm\ntouch /var/lib/maplebridge/ssm-bootstrap-complete\n"
+            },
+            "#!/usr/bin/env bash\n# MapleBridge SSM bootstrap credentials were redacted after successful registration.\nexit 0\n"
+          ]
+        }
+      }
+    },
+    "GatewayStaticIp": {
+      "Type": "AWS::Lightsail::StaticIp",
+      "Condition": "CreateGateway",
+      "Properties": {
+        "AttachedTo": { "Ref": "GatewayInstance" },
+        "StaticIpName": {
+          "Fn::Sub": "${GatewayName}-ip"
+        }
+      }
+    }
+  },
+  "Outputs": {
+    "SsmHybridNodeRoleName": {
+      "Description": "Role name to pass to ssm create-activation.",
+      "Value": { "Ref": "SsmHybridNodeRole" }
+    },
+    "MaintenanceWindowRoleArn": {
+      "Description": "Role assumed by Systems Manager for MapleBridge maintenance window tasks.",
+      "Value": { "Fn::GetAtt": ["MaintenanceWindowRole", "Arn"] }
+    },
+    "MaintenanceWindowId": {
+      "Condition": "CreateAutomaticMaintenance",
+      "Description": "CloudFormation-managed Systems Manager maintenance window ID.",
+      "Value": { "Ref": "SecurityMaintenanceWindow" }
+    },
+    "MaintenanceWindowTargetId": {
+      "Condition": "CreateAutomaticMaintenance",
+      "Description": "CloudFormation-managed maintenance target registration ID.",
+      "Value": { "Ref": "SecurityMaintenanceTarget" }
+    },
+    "MaintenanceWindowTaskId": {
+      "Condition": "CreateAutomaticMaintenance",
+      "Description": "CloudFormation-managed maintenance task registration ID.",
+      "Value": { "Ref": "SecurityMaintenanceTask" }
+    },
+    "GatewayInstanceName": {
+      "Condition": "CreateGateway",
+      "Value": { "Ref": "GatewayInstance" }
+    },
+    "GatewayStaticIpAddress": {
+      "Condition": "CreateGateway",
+      "Value": { "Fn::GetAtt": ["GatewayStaticIp", "IpAddress"] }
+    }
+  }
+}

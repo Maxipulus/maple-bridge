@@ -3,7 +3,7 @@
 ## Scope
 
 - Read README.md first. This is an early-stage Windows / AWS WireGuard project for GMS.
-- Default routing must target GMS-related domains. Domain discovery and routing implementation remain undecided; do not silently substitute a full tunnel.
+- Default routing must cover GMS and Nexon Launcher traffic while keeping unrelated traffic direct. Evaluate process and domain rules as described in docs/harness.md; do not silently substitute a full tunnel.
 - Keep deployment repeatable, preserve existing keys, and make failures diagnosable.
 
 ## Workflow

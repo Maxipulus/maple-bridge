@@ -1,0 +1,205 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "CallerIdentity",
+      "Effect": "Allow",
+      "Action": "sts:GetCallerIdentity",
+      "Resource": "*"
+    },
+    {
+      "Sid": "ReadinessChecks",
+      "Effect": "Allow",
+      "Action": [
+        "cloudformation:ValidateTemplate",
+        "cloudformation:ListStacks",
+        "lightsail:GetBlueprints",
+        "lightsail:GetBundles",
+        "lightsail:GetRegions"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "us-west-2"
+        }
+      }
+    },
+    {
+      "Sid": "MapleBridgeStackLifecycle",
+      "Effect": "Allow",
+      "Action": [
+        "cloudformation:CreateStack",
+        "cloudformation:UpdateStack",
+        "cloudformation:DeleteStack",
+        "cloudformation:DescribeStack*",
+        "cloudformation:ListStackResources",
+        "cloudformation:GetTemplate",
+        "cloudformation:GetTemplateSummary",
+        "cloudformation:CreateChangeSet",
+        "cloudformation:DescribeChangeSet",
+        "cloudformation:ExecuteChangeSet",
+        "cloudformation:DeleteChangeSet",
+        "cloudformation:ListChangeSets"
+      ],
+      "Resource": [
+        "arn:aws:cloudformation:us-west-2:*:stack/maplebridge*/*",
+        "arn:aws:cloudformation:us-west-2:*:changeSet/maplebridge*/*"
+      ]
+    },
+    {
+      "Sid": "MapleBridgeLightsailRead",
+      "Effect": "Allow",
+      "Action": "lightsail:Get*",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "us-west-2"
+        }
+      }
+    },
+    {
+      "Sid": "MapleBridgeLightsailWrite",
+      "Effect": "Allow",
+      "Action": [
+        "lightsail:CreateInstances",
+        "lightsail:DeleteInstance",
+        "lightsail:StartInstance",
+        "lightsail:StopInstance",
+        "lightsail:RebootInstance",
+        "lightsail:AllocateStaticIp",
+        "lightsail:AttachStaticIp",
+        "lightsail:DetachStaticIp",
+        "lightsail:ReleaseStaticIp",
+        "lightsail:PutInstancePublicPorts",
+        "lightsail:OpenInstancePublicPorts",
+        "lightsail:CloseInstancePublicPorts",
+        "lightsail:TagResource",
+        "lightsail:UntagResource"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "us-west-2"
+        }
+      }
+    },
+    {
+      "Sid": "MapleBridgeRoleLifecycle",
+      "Effect": "Allow",
+      "Action": [
+        "iam:CreateRole",
+        "iam:DeleteRole",
+        "iam:GetRole",
+        "iam:UpdateAssumeRolePolicy",
+        "iam:TagRole",
+        "iam:UntagRole",
+        "iam:ListAttachedRolePolicies",
+        "iam:ListRolePolicies",
+        "iam:GetRolePolicy",
+        "iam:PutRolePolicy",
+        "iam:DeleteRolePolicy"
+      ],
+      "Resource": "arn:aws:iam::*:role/maplebridge/*"
+    },
+    {
+      "Sid": "AttachApprovedManagedPolicies",
+      "Effect": "Allow",
+      "Action": [
+        "iam:AttachRolePolicy",
+        "iam:DetachRolePolicy"
+      ],
+      "Resource": "arn:aws:iam::*:role/maplebridge/*",
+      "Condition": {
+        "ArnEquals": {
+          "iam:PolicyARN": [
+            "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore",
+            "arn:aws:iam::aws:policy/service-role/AmazonSSMMaintenanceWindowRole"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "PassMapleBridgeRolesToSystemsManager",
+      "Effect": "Allow",
+      "Action": "iam:PassRole",
+      "Resource": "arn:aws:iam::*:role/maplebridge/*",
+      "Condition": {
+        "StringEquals": {
+          "iam:PassedToService": "ssm.amazonaws.com"
+        }
+      }
+    },
+    {
+      "Sid": "MapleBridgeSystemsManagerLifecycle",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:CreateActivation",
+        "ssm:DeleteActivation",
+        "ssm:DescribeActivations",
+        "ssm:DeregisterManagedInstance",
+        "ssm:DescribeInstanceInformation",
+        "ssm:GetConnectionStatus",
+        "ssm:AddTagsToResource",
+        "ssm:RemoveTagsFromResource",
+        "ssm:ListTagsForResource",
+        "ssm:SendCommand",
+        "ssm:CancelCommand",
+        "ssm:GetCommandInvocation",
+        "ssm:ListCommandInvocations",
+        "ssm:ListCommands",
+        "ssm:GetDocument",
+        "ssm:DescribeDocument",
+        "ssm:CreateMaintenanceWindow",
+        "ssm:UpdateMaintenanceWindow",
+        "ssm:DeleteMaintenanceWindow",
+        "ssm:GetMaintenanceWindow*",
+        "ssm:DescribeMaintenanceWindow*",
+        "ssm:RegisterTargetWithMaintenanceWindow",
+        "ssm:DeregisterTargetFromMaintenanceWindow",
+        "ssm:RegisterTaskWithMaintenanceWindow",
+        "ssm:DeregisterTaskFromMaintenanceWindow",
+        "ssm:DescribePatchBaselines",
+        "ssm:GetDefaultPatchBaseline",
+        "ssm:GetPatchBaseline",
+        "ssm:DescribeInstancePatchStates",
+        "ssm:DescribeInstancePatches",
+        "ssm:DescribeAvailablePatches"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "us-west-2"
+        }
+      }
+    },
+    {
+      "Sid": "MapleBridgeSessionStart",
+      "Effect": "Allow",
+      "Action": "ssm:StartSession",
+      "Resource": [
+        "arn:aws:ssm:us-west-2:*:managed-instance/mi-*",
+        "arn:aws:ssm:us-west-2::document/SSM-SessionManagerRunShell"
+      ]
+    },
+    {
+      "Sid": "OwnSessionLifecycle",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:ResumeSession",
+        "ssm:TerminateSession"
+      ],
+      "Resource": "arn:aws:ssm:us-west-2:*:session/${aws:userid}-*"
+    },
+    {
+      "Sid": "SessionVisibility",
+      "Effect": "Allow",
+      "Action": "ssm:DescribeSessions",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "us-west-2"
+        }
+      }
+    }
+  ]
+}
