@@ -73,6 +73,8 @@ Run the read-only client discovery behavior tests without inspecting live networ
 Invoke-Pester -Path .\tests
 ```
 
+The current suite targets the Pester 3.4 module included with Windows PowerShell 5.1. CI loads that exact built-in version so discovery and `$TestDrive` behavior match the supported local harness; it does not download a test framework during the job.
+
 Run the release-safety scan before staging or publishing. It checks publishable files and commit-author metadata without printing matched secret values:
 
 ```powershell

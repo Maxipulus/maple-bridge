@@ -7,6 +7,7 @@ Describe 'MapleBridge release automation' {
         $workflow = Get-Content -LiteralPath $workflowPath -Raw
 
         $workflow | Should Match 'runs-on: windows-latest'
+        $workflow | Should Match 'Import-Module Pester -RequiredVersion 3\.4\.0'
         $workflow | Should Match 'Invoke-Pester'
         $workflow | Should Match 'Test-MapleBridgeRelease\.ps1'
         $workflow | Should Match 'fetch-depth: 0'
